@@ -167,8 +167,9 @@ COPY_EXISTING ~spell.ids~ ~override~
 				COPY_EXISTING ~%res%.spl~ ~override~ 
 					PATCH_IF (SOURCE_SIZE > 0x71) BEGIN 
 						READ_SHORT 0x1c type 
-						
-						READ_LONG 0x34 level 					
+						READ_LONG 0x34 level 		
+						READ_BYTE 0x20 jesterflag
+						WRITE_BYTE 0x20 (%jesterflag% BOR ~0b01000000~)
 						PATCH_IF (type = 1) BEGIN 
 							TEXT_SPRINT checkspl ~qdcka%level%~
 							LPF ADD_SPELL_CFEFFECT INT_VAR opcode = 326 target = 1 timing = 1 parameter1 = 200 parameter2= 110 STR_VAR resource = EVAL ~%checkspl%~ END	
@@ -337,42 +338,6 @@ OUTER_FOR (lvl = 1; lvl < 8; ++lvl) BEGIN
 	END 
 END 
 
-//slot tracking spells [arcane]
-OUTER_FOR (lvl = 1; lvl < 10; ++lvl) BEGIN 
-	OUTER_TEXT_SPRINT spl ~qdaslt%lvl%~
-	OUTER_SET prof = 88 + lvl + 65536
-	OUTER_SET shift = (1 << 24) 
-	COPY ~Sorcery/data/QDBLANK.spl~ ~override/%spl%.spl~
-		LPF ADD_SPELL_EFFECT INT_VAR opcode = 233 target = 1 timing = 9 parameter1 = EVAL ~%shift%~ parameter2= EVAL ~%prof%~  END	
-END 
-
-//slot tracking spells [divine]
-OUTER_FOR (lvl = 1; lvl < 8; ++lvl) BEGIN 
-	OUTER_TEXT_SPRINT spl ~qddslt%lvl%~
-	OUTER_SET prof = 99 + lvl + 65536
-	OUTER_SET shift = (1 << 24) 
-	COPY ~Sorcery/data/QDBLANK.spl~ ~override/%spl%.spl~
-		LPF ADD_SPELL_EFFECT INT_VAR opcode = 233 target = 1 timing = 9 parameter1 = EVAL ~%shift%~ parameter2= EVAL ~%prof%~  END	
-END 
-
-//cast tracking spells [arcane]
-OUTER_FOR (lvl = 1; lvl < 10; ++lvl) BEGIN 
-	OUTER_TEXT_SPRINT spl ~qdacst%lvl%~
-	OUTER_SET prof = 88 + lvl + 65536
-	OUTER_SET shift = (1 << 16) 
-	COPY ~Sorcery/data/QDBLANK.spl~ ~override/%spl%.spl~
-		LPF ADD_SPELL_EFFECT INT_VAR opcode = 233 target = 1 timing = 9 parameter1 = EVAL ~%shift%~ parameter2= EVAL ~%prof%~  END	
-END 
-
-//cast tracking spells [divine]
-OUTER_FOR (lvl = 1; lvl < 8; ++lvl) BEGIN 
-	OUTER_TEXT_SPRINT spl ~qddcst%lvl%~
-	OUTER_SET prof = 99 + lvl + 65536
-	OUTER_SET shift = (1 << 16) 
-	COPY ~Sorcery/data/QDBLANK.spl~ ~override/%spl%.spl~
-		LPF ADD_SPELL_EFFECT INT_VAR opcode = 233 target = 1 timing = 9 parameter1 = EVAL ~%shift%~ parameter2= EVAL ~%prof%~  END	
-END 
-
 //remaining string spells [arcane]
 OUTER_FOR (lvl = 1; lvl < 9; ++lvl) BEGIN 
 	OUTER_FOR (slots = 0; slots < 10; ++slots) BEGIN	
@@ -391,14 +356,63 @@ OUTER_FOR (lvl = 1; lvl < 8; ++lvl) BEGIN
 	END 
 END 
 
+//item patching
+<<<<<<<< QD/blank2da.2da
+>>>>>>>> 
 
-BEGIN @10
+COPY ~QD/blank2da.2da~ ~override/qdsoritm.2da~ 
+
+COPY_EXISTING_REGEXP GLOB ~^.+\.itm$~ ~override~
+	GET_OFFSET_ARRAY eqeffs ITM_V10_GEN_EFFECTS 
+	PHP_EACH eqeffs AS int => eff_off  BEGIN 
+		READ_SHORT eff_off opcode 
+		READ_LONG (eff_off + 0x4) param1
+		READ_LONG (eff_off + 0x8) param2
+		PATCH_IF ((opcode = 42) AND (param1 > 0) AND (param2 > 0)) BEGIN 
+			PATCH_IF (param2 > 0) BEGIN 
+				FOR (ind = 9; ind > 0; --ind) BEGIN 
+					SET binary = 2**(ind - 1) 
+					PATCH_IF (param2 >= binary) BEGIN 
+						param2 = param2 - binary
+						//LPF ADD_ITEM_EQEFFECT INT_VAR opcode = 233 target = 1 timing = 2 	parameter1 = EVAL ~%profinc%~ parameter2= EVAL ~%prof%~ insert_point  = (0 - 1) END
+						INNER_ACTION BEGIN 
+							APPEND ~qdsoritm.2da~ ~%SOURCE_RES%		%ind% %param1%~ 
+						END 
+					END 
+				END
+			END 
+		END 	
+	END 
+
+COPY_EXISTING ~qdsoritm.2da~ ~override~ 
+	COUNT_2DA_COLS cols // amount of columns
+	READ_2DA_ENTRIES_NOW rows cols // read all file into memory  
+	FOR (row = 0; row < rows; ++row) BEGIN // iterate over rows
+		READ_2DA_ENTRY_FORMER rows row 0 res 
+		READ_2DA_ENTRY_FORMER rows row 1 level 
+		READ_2DA_ENTRY_FORMER rows row 2 num
+		profinc = (num << 24)
+		prof = 88 + level + 65536
+		INNER_ACTION BEGIN 
+			COPY_EXISTING ~%res%.itm~ ~override~ 
+				LPF ADD_ITEM_EQEFFECT INT_VAR opcode = 233 target = 1 timing = 2 	parameter1 = EVAL ~%profinc%~ parameter2= EVAL ~%prof%~ END
+		END 
+	END 
 
 //Making Jesters use the Blade kit flag (should work with Might and Guile kit flag switching)
 COPY_EXISTING ~kitlist.2da~ ~override~
 	REPLACE_TEXTUALLY EXACT_MATCH ~0x00400000~ ~0x00200000~
 BUT_ONLY
 
+//Removing these spells from selection table -> prevent Sorcerer from learning them
+APPEND ~HIDESPL.2da~ ~SPWI110	1	0~ //Identify
+APPEND ~HIDESPL.2da~ ~SPWI420	1	0~ //Minor Sequencer
+APPEND ~HIDESPL.2da~ ~SPWI710	1	0~ //Spell Sequencer
+APPEND ~HIDESPL.2da~ ~SPWI809	1	0~ //Spell Trigger
+APPEND ~HIDESPL.2da~ ~SPWI617	1	0~ //Contingency
+APPEND ~HIDESPL.2da~ ~SPWI908	1	0~ //Chain Contingency
+
+BEGIN @10
 //add sorcerer mage kit 
 INCLUDE ~Sorcery/lib/fl#add_kit_ee.tpa~
  
@@ -433,7 +447,7 @@ END
 
 COPY ~Sorcery/data/QDSORC1.spl~ ~override~ //set spontaneous casting for arcane
 
-//new line for handling difference
+//new line for handling prepared/memorization
 COPY_EXISTING ~qdsorc.2da~ ~override~
 	COUNT_2DA_COLS cols // amount of columns
 	INNER_ACTION BEGIN 
@@ -464,745 +478,64 @@ COPY_EXISTING ~qdsorc.2da~ ~override~
 	SET_2DA_ENTRIES_NOW ~qd_qdsorc_splslots~ cols
 	
 
-//adding spell slot tracking to clab based on mxsplwiz
+//adding spell slot/casts tracking to clab based on mxsplwiz
 COPY_EXISTING ~mxsplwiz.2da~ ~override~ 
 	COUNT_2DA_COLS wizcols // amount of columns
+
 	READ_2DA_ENTRIES_NOW wizrows wizcols // read all file into memory  
 	INNER_ACTION BEGIN 
 		COPY_EXISTING ~splsrckn.2da~ ~override~ 
 			COUNT_2DA_COLS sorcols // amount of columns
 			READ_2DA_ENTRIES_NOW sorrows sorcols // read all file into memory
+		COPY_EXISTING ~mxsplsrc.2da~ ~override~ 
+			COUNT_2DA_COLS srccols // amount of columns
+			READ_2DA_ENTRIES_NOW srcrows srccols // read all file into memory
 	END 
 	FOR (row = 0; row < sorrows; ++row) BEGIN // iterate over rows
-		READ_2DA_ENTRY_FORMER sorrows row 0 level // get level
-		PATCH_PRINT ~%level%~
+		READ_2DA_ENTRY_FORMER sorrows row 0 charlevel // get level
 		FOR (col = 1; col < sorcols ; ++col) BEGIN //iterate over cols
 			READ_2DA_ENTRY_FORMER wizrows row col wiz // spls in base progression
 			READ_2DA_ENTRY_FORMER sorrows row col sor // spls in new progression
+			READ_2DA_ENTRY_FORMER srcrows row col src // spls per day
+			spllevel = col
 			delta = sor - (wiz + 1)
-			levelexp = 2**(%col% - 1)
-			lowlevel = level - 1
-			PATCH_PRINT ~%col% -> %levelexp%~
+			levelexp = 2**(%spllevel% - 1)
+			lowlevel = charlevel - 1
+			casts = src - 1
+			slots = sor
+			prof = 88 + spllevel + 65536 
+			castshift = (1 << 16)
+			slotshift = (1 << 24)
+			caststotal = casts * castshift
+			slotstotal = slots * slotshift
 			PATCH_IF (delta) BEGIN 
 				INNER_ACTION BEGIN 
-					COPY_EXISTING ~override/QDSOR#%level%.spl~ ~override~
+					COPY_EXISTING ~override/QDSOR#%charlevel%.spl~ ~override~
 						LPF ADD_SPELL_EFFECT INT_VAR opcode = 42 target = 1 timing = 9 parameter1 = EVAL ~%delta%~ parameter2= EVAL ~%levelexp%~  END	
-						LPF ADD_SPELL_EFFECT INT_VAR opcode = 321 target = 1 timing = 1 parameter2= 0 STR_VAR resource = EVAL ~QDSOR#%lowlevel%~   END	
 				END 
 			END 
+			PATCH_IF (caststotal > 0) BEGIN 
+				INNER_ACTION BEGIN 
+					COPY_EXISTING ~override/QDSOR#%charlevel%.spl~ ~override~
+						LPF ADD_SPELL_EFFECT INT_VAR opcode = 233 target = 1 timing = 9 parameter1 = EVAL ~%caststotal%~ parameter2= EVAL ~%prof%~  END		
+				END 
+			END 
+			PATCH_IF (slotstotal > 0) BEGIN 
+				INNER_ACTION BEGIN 
+					COPY_EXISTING ~override/QDSOR#%charlevel%.spl~ ~override~
+						LPF ADD_SPELL_EFFECT INT_VAR opcode = 233 target = 1 timing = 9 parameter1 = EVAL ~%slotstotal%~ parameter2= EVAL ~%prof%~  END		
+				END 
+			END 
+			 
 		END 
+		PATCH_IF (charlevel > 1) BEGIN 
+			INNER_ACTION BEGIN 
+				COPY_EXISTING ~override/QDSOR#%charlevel%.spl~ ~override~
+					LPF ADD_SPELL_EFFECT INT_VAR opcode = 321 target = 1 timing = 1 parameter2= 0 STR_VAR resource = EVAL ~QDSOR#%lowlevel%~ END	
+			END 
+		END
 	END 
-
-// spell slots provision
-COPY_EXISTING ~splsrckn.2da~ ~override~ 
-	COUNT_2DA_COLS cols // amount of columns
-	SET slots1 = 0 
-	SET slots2 = 0 
-	SET slots3 = 0 
-	SET slots4 = 0 
-	SET slots5 = 0 
-	SET slots6 = 0 
-	SET slots7 = 0 
-	SET slots8 = 0 
-	SET slots9 = 0 
-	
-	READ_2DA_ENTRIES_NOW rows cols // read all file into memory  
-	FOR (row = 0; row < rows; ++row) BEGIN // iterate over rows
-		READ_2DA_ENTRY_FORMER rows row 0 level // read row value
-		READ_2DA_ENTRY_FORMER rows row 1 first // read row value
-		READ_2DA_ENTRY_FORMER rows row 2 second // read row value
-		READ_2DA_ENTRY_FORMER rows row 3 third // read row value
-		READ_2DA_ENTRY_FORMER rows row 4 fourth // read row value
-		READ_2DA_ENTRY_FORMER rows row 5 fifth // read row value
-		READ_2DA_ENTRY_FORMER rows row 6 sixth // read row value
-		READ_2DA_ENTRY_FORMER rows row 7 seventh // read row value
-		READ_2DA_ENTRY_FORMER rows row 8 eighth // read row value
-		READ_2DA_ENTRY_FORMER rows row 9 ninth // read row value
-		
-		PATCH_IF (first = (slots1 + 2)) BEGIN 
-			++slots1 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 9 level clabcols  ~AP_QDASLT1~ 
-			END 
-			
-		END 
-		PATCH_IF (second = (slots2 + 2)) BEGIN 
-			++slots2 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 9 level clabcols  ~AP_QDASLT2~ 
-			END 
-		END 
-		PATCH_IF (third = (slots3 + 2)) BEGIN 
-			++slots3 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 9 level clabcols  ~AP_QDASLT3~ 
-			END 
-			
-		END 
-		PATCH_IF (fourth = (slots4 + 2)) BEGIN 
-			++slots4
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 9 level clabcols  ~AP_QDASLT4~ 
-			END 
-		END 
-		PATCH_IF (fifth = (slots5 + 2)) BEGIN 
-			++slots5
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 9 level clabcols  ~AP_QDASLT5~ 
-			END 
-			
-		END 
-		PATCH_IF (sixth = (slots6 + 2)) BEGIN 
-			++slots6
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 9 level clabcols  ~AP_QDASLT6~ 
-			END 
-		END 
-		PATCH_IF (seventh = (slots7 + 2)) BEGIN 
-			++slots7
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 9 level clabcols  ~AP_QDASLT7~ 
-			END 
-			
-		END 
-		PATCH_IF (eighth = (slots8 + 2)) BEGIN 
-			++slots8
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 9 level clabcols  ~AP_QDASLT8~ 
-			END 
-		END 
-		PATCH_IF (ninth = (slots9 + 2)) BEGIN 
-			++slots9 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 9 level clabcols  ~AP_QDASLT9~ 
-			END 
-		END 
-		PATCH_IF (first = (slots1 + 1)) BEGIN 
-			++slots1 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 0 level clabcols  ~AP_QDASLT1~ 
-			END 
-			
-		END 
-		PATCH_IF (second = (slots2 + 1)) BEGIN 
-			++slots2 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 1 level clabcols  ~AP_QDASLT2~ 
-			END 
-		END 
-		PATCH_IF (third = (slots3 + 1)) BEGIN 
-			++slots3 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 2 level clabcols  ~AP_QDASLT3~ 
-			END 
-			
-		END 
-		PATCH_IF (fourth = (slots4 + 1)) BEGIN 
-			++slots4
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 3 level clabcols  ~AP_QDASLT4~ 
-			END 
-		END 
-		PATCH_IF (fifth = (slots5 + 1)) BEGIN 
-			++slots5
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 4 level clabcols  ~AP_QDASLT5~ 
-			END 
-			
-		END 
-		PATCH_IF (sixth = (slots6 + 1)) BEGIN 
-			++slots6
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 5 level clabcols  ~AP_QDASLT6~ 
-			END 
-		END 
-		PATCH_IF (seventh = (slots7 + 1)) BEGIN 
-			++slots7
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 6 level clabcols  ~AP_QDASLT7~ 
-			END 
-			
-		END 
-		PATCH_IF (eighth = (slots8 + 1)) BEGIN 
-			++slots8
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 7 level clabcols  ~AP_QDASLT8~ 
-			END 
-		END 
-		PATCH_IF (ninth = (slots9 + 1)) BEGIN 
-			++slots9 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 8 level clabcols  ~AP_QDASLT9~ 
-			END 
-		END 
-	END
-
-	 
-//set-up sorc casts 
-COPY_EXISTING ~mxsplsrc.2da~ ~override~ 
-	COUNT_2DA_COLS cols // amount of columns
-	SET casts1 = 1 
-	SET casts2 = 1 
-	SET casts3 = 1 
-	SET casts4 = 1 
-	SET casts5 = 1 
-	SET casts6 = 1 
-	SET casts7 = 1 
-	SET casts8 = 1 
-	SET casts9 = 1 
-	
-	READ_2DA_ENTRIES_NOW rows cols // read all file into memory  
-	FOR (row = 0; row < rows; ++row) BEGIN // iterate over rows
-		READ_2DA_ENTRY_FORMER rows row 0 level // read row value
-		READ_2DA_ENTRY_FORMER rows row 1 first // read row value
-		READ_2DA_ENTRY_FORMER rows row 2 second // read row value
-		READ_2DA_ENTRY_FORMER rows row 3 third // read row value
-		READ_2DA_ENTRY_FORMER rows row 4 fourth // read row value
-		READ_2DA_ENTRY_FORMER rows row 5 fifth // read row value
-		READ_2DA_ENTRY_FORMER rows row 6 sixth // read row value
-		READ_2DA_ENTRY_FORMER rows row 7 seventh // read row value
-		READ_2DA_ENTRY_FORMER rows row 8 eighth // read row value
-		READ_2DA_ENTRY_FORMER rows row 9 ninth // read row value
-		
-		PATCH_IF (first = (casts1 + 2)) BEGIN 
-			++casts1 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 19 level clabcols  ~AP_QDACST1~ 
-			END 
-			
-		END 
-		PATCH_IF (second = (casts2 + 2)) BEGIN 
-			++casts2 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 19 level clabcols  ~AP_QDACST2~ 
-			END 
-		END 
-		PATCH_IF (third = (casts3 + 2)) BEGIN 
-			++casts3 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 19 level clabcols  ~AP_QDACST3~ 
-			END 
-			
-		END 
-		PATCH_IF (fourth = (casts4 + 2)) BEGIN 
-			++casts4
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 19 level clabcols  ~AP_QDACST4~ 
-			END 
-		END 
-		PATCH_IF (fifth = (casts5 + 2)) BEGIN 
-			++casts5
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 19 level clabcols  ~AP_QDACST5~ 
-			END 
-			
-		END 
-		PATCH_IF (sixth = (casts6 + 2)) BEGIN 
-			++casts6
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 19 level clabcols  ~AP_QDACST6~ 
-			END 
-		END 
-		PATCH_IF (seventh = (casts7 + 2)) BEGIN 
-			++casts7
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 19 level clabcols  ~AP_QDACST7~ 
-			END 
-			
-		END 
-		PATCH_IF (eighth = (casts8 + 2)) BEGIN 
-			++casts8
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 19 level clabcols  ~AP_QDACST8~ 
-			END 
-		END 
-		PATCH_IF (ninth = (casts9 + 2)) BEGIN 
-			++casts9 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 19 level clabcols  ~AP_QDACST9~ 
-			END 
-		END 
-		PATCH_IF (first = (casts1 + 1)) BEGIN 
-			++casts1 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 10 level clabcols  ~AP_QDACST1~ 
-			END 
-			
-		END 
-		PATCH_IF (second = (casts2 + 1)) BEGIN 
-			++casts2 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 11 level clabcols  ~AP_QDACST2~ 
-			END 
-		END 
-		PATCH_IF (third = (casts3 + 1)) BEGIN 
-			++casts3 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 12 level clabcols  ~AP_QDACST3~ 
-			END 
-			
-		END 
-		PATCH_IF (fourth = (casts4 + 1)) BEGIN 
-			++casts4
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 13 level clabcols  ~AP_QDACST4~ 
-			END 
-		END 
-		PATCH_IF (fifth = (casts5 + 1)) BEGIN 
-			++casts5
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 14 level clabcols  ~AP_QDACST5~ 
-			END 
-			
-		END 
-		PATCH_IF (sixth = (casts6 + 1)) BEGIN 
-			++casts6
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 15 level clabcols  ~AP_QDACST6~ 
-			END 
-		END 
-		PATCH_IF (seventh = (casts7 + 1)) BEGIN 
-			++casts7
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 16 level clabcols  ~AP_QDACST7~ 
-			END 
-			
-		END 
-		PATCH_IF (eighth = (casts8 + 1)) BEGIN 
-			++casts8
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 17 level clabcols  ~AP_QDACST8~ 
-			END 
-		END 
-		PATCH_IF (ninth = (casts9 + 1)) BEGIN 
-			++casts9 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDSORC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 18 level clabcols  ~AP_QDACST9~ 
-			END 
-		END 
-		
-	END 
-
-	
 	
 COPY_EXISTING ~QDSORC.2da~ ~override~ //improve readability
 	PRETTY_PRINT_2DA
-	
 
-//This will make all spells unusable to characters with the Jester flag. 
-COPY_EXISTING_REGEXP GLOB ~^.+\.spl$~ ~override~
-  READ_SHORT 0x1c spell_type
-  PATCH_IF spell_type = 1 BEGIN
-	  READ_BYTE 0x20 psion_excludes
-	  WRITE_BYTE 0x20 (%psion_excludes% BOR ~0b01000000~)  // taking over the jester flag
-  END
-BUT_ONLY 
-
-
-/*
-// wondrous recall opcode has a bug and thus this doesn't work properly. 
-BEGIN @20
-
-
-//add sorcerer mage kit 
-INCLUDE ~Sorcery/lib/fl#add_kit_ee.tpa~
- 
-ADD_KIT ~QDORAC~ 
-	~QDORAC 0 1 0 0 1 0 0 1~ //clasweap.2da
-	~QDORAC 0 1 0 0 1 0 0 1 1 1 1 1 1 1 1 1 1 1 1 0 0 0 1 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0~ //weapprof.2da 
-	~QDORAC 0 0 0 0 0 9~ //abclasrq.2da 
-	~QDORAC 0 0 0 0 0 0~ //abclsmod.2da
-	~QDORAC 0 0 0 0 0 17~ //abdcdsrq.2da
-	~QDORAC 0 0 0 0 0 15~ //abdcscrq.2da 
-	~QDORAC 1 1 1 1 1 1 1 1 1~ //alignmnt.2da
-	~QDORAC 1 1 0 1 0 0~ //dualclas.2da
-	~Sorcery/data/QDORAC.2da~ //CLAB
-	~K_C_H K_C_HE K_C_E K_C_HO K_C_HL K_C_D K_C_G~ 
-	~0x00004000	3~ 
-	~Pr0~ 
-	~* * * * * * * * * * * * * * * * * * * *~
-	SAY @21
-	SAY @22
-	SAY @23
-
-ACTION_IF GAME_IS ~bgee bg2ee iwdee eet~ THEN BEGIN
-	LAF fl#add_kit_ee
-		INT_VAR
-			briefdesc = RESOLVE_STR_REF(@23)
-		STR_VAR
-			kit_name = ~QDORAC~
-			hpclass = ~HPPRS~
-
-	END
-END 
-
-//adding spell slot tracking to clab based on mxsplwiz
-COPY_EXISTING ~mxsplprs.2da~ ~override~ 
-	COUNT_2DA_COLS cols // amount of columns
-	SET slots1 = 0 
-	SET slots2 = 0 
-	SET slots3 = 0 
-	SET slots4 = 0 
-	SET slots5 = 0 
-	SET slots6 = 0 
-	SET slots7 = 0 
-	
-	READ_2DA_ENTRIES_NOW rows cols // read all file into memory  
-	FOR (row = 0; row < rows; ++row) BEGIN // iterate over rows
-		READ_2DA_ENTRY_FORMER rows row 0 level // read row value
-		READ_2DA_ENTRY_FORMER rows row 1 first // read row value
-		READ_2DA_ENTRY_FORMER rows row 2 second // read row value
-		READ_2DA_ENTRY_FORMER rows row 3 third // read row value
-		READ_2DA_ENTRY_FORMER rows row 4 fourth // read row value
-		READ_2DA_ENTRY_FORMER rows row 5 fifth // read row value
-		READ_2DA_ENTRY_FORMER rows row 6 sixth // read row value
-		READ_2DA_ENTRY_FORMER rows row 7 seventh // read row value
-		
-		PATCH_IF (first = (slots1 + 2)) BEGIN 
-			++slots1 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 9 level clabcols  ~AP_QDDSLT1~ 
-			END 
-			
-		END 
-		PATCH_IF (second = (slots2 + 2)) BEGIN 
-			++slots2 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 9 level clabcols  ~AP_QDDSLT2~ 
-			END 
-		END 
-		PATCH_IF (third = (slots3 + 2)) BEGIN 
-			++slots3 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 9 level clabcols  ~AP_QDDSLT3~ 
-			END 
-			
-		END 
-		PATCH_IF (fourth = (slots4 + 2)) BEGIN 
-			++slots4
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 9 level clabcols  ~AP_QDDSLT4~ 
-			END 
-		END 
-		PATCH_IF (fifth = (slots5 + 2)) BEGIN 
-			++slots5
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 9 level clabcols  ~AP_QDDSLT5~ 
-			END 
-			
-		END 
-		PATCH_IF (sixth = (slots6 + 2)) BEGIN 
-			++slots6
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 9 level clabcols  ~AP_QDDSLT6~ 
-			END 
-		END 
-		PATCH_IF (seventh = (slots7 + 2)) BEGIN 
-			++slots7
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 9 level clabcols  ~AP_QDDSLT7~ 
-			END 
-			
-		END 
-		PATCH_IF (first = (slots1 + 1)) BEGIN 
-			++slots1 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 0 level clabcols  ~AP_QDDSLT1~ 
-			END 
-			
-		END 
-		PATCH_IF (second = (slots2 + 1)) BEGIN 
-			++slots2 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 1 level clabcols  ~AP_QDDSLT2~ 
-			END 
-		END 
-		PATCH_IF (third = (slots3 + 1)) BEGIN 
-			++slots3 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 2 level clabcols  ~AP_QDDSLT3~ 
-			END 
-			
-		END 
-		PATCH_IF (fourth = (slots4 + 1)) BEGIN 
-			++slots4
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 3 level clabcols  ~AP_QDDSLT4~ 
-			END 
-		END 
-		PATCH_IF (fifth = (slots5 + 1)) BEGIN 
-			++slots5
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 4 level clabcols  ~AP_QDDSLT5~ 
-			END 
-			
-		END 
-		PATCH_IF (sixth = (slots6 + 1)) BEGIN 
-			++slots6
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 5 level clabcols  ~AP_QDDSLT6~ 
-			END 
-		END 
-		PATCH_IF (seventh = (slots7 + 1)) BEGIN 
-			++slots7
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 6 level clabcols  ~AP_QDDSLT7~ 
-			END 
-			
-		END 
-	END
-
-COPY ~Sorcery/data/QDORAC1.spl~ ~override~ //remove specialist bonus spl and set spontaneous casting for arcane
-	 
-//set-up sorc casts 
-COPY_EXISTING ~mxsplprs.2da~ ~override~ 
-	COUNT_2DA_COLS cols // amount of columns
-	SET casts1 = 1 
-	SET casts2 = 1 
-	SET casts3 = 1 
-	SET casts4 = 1 
-	SET casts5 = 1 
-	SET casts6 = 1 
-	SET casts7 = 1 
-
-	
-	READ_2DA_ENTRIES_NOW rows cols // read all file into memory  
-	FOR (row = 0; row < rows; ++row) BEGIN // iterate over rows
-		READ_2DA_ENTRY_FORMER rows row 0 level // read row value
-		READ_2DA_ENTRY_FORMER rows row 1 first // read row value
-		READ_2DA_ENTRY_FORMER rows row 2 second // read row value
-		READ_2DA_ENTRY_FORMER rows row 3 third // read row value
-		READ_2DA_ENTRY_FORMER rows row 4 fourth // read row value
-		READ_2DA_ENTRY_FORMER rows row 5 fifth // read row value
-		READ_2DA_ENTRY_FORMER rows row 6 sixth // read row value
-		READ_2DA_ENTRY_FORMER rows row 7 seventh // read row value
-
-		PATCH_IF (first = (casts1 + 2)) BEGIN 
-			++casts1 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 19 level clabcols  ~AP_QDDCST1~ 
-			END 
-			
-		END 
-		PATCH_IF (second = (casts2 + 2)) BEGIN 
-			++casts2 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 19 level clabcols  ~AP_QDDCST2~ 
-			END 
-		END 
-		PATCH_IF (third = (casts3 + 2)) BEGIN 
-			++casts3 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 19 level clabcols  ~AP_QDDCST3~ 
-			END 
-			
-		END 
-		PATCH_IF (fourth = (casts4 + 2)) BEGIN 
-			++casts4
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 19 level clabcols  ~AP_QDDCST4~ 
-			END 
-		END 
-		PATCH_IF (fifth = (casts5 + 2)) BEGIN 
-			++casts5
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 19 level clabcols  ~AP_QDDCST5~ 
-			END 
-			
-		END 
-		PATCH_IF (sixth = (casts6 + 2)) BEGIN 
-			++casts6
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 19 level clabcols  ~AP_QDDCST6~ 
-			END 
-		END 
-		PATCH_IF (seventh = (casts7 + 2)) BEGIN 
-			++casts7
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 19 level clabcols  ~AP_QDDCST7~ 
-			END 
-			
-		END 
-		PATCH_IF (first = (casts1 + 1)) BEGIN 
-			++casts1 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 10 level clabcols  ~AP_QDDCST1~ 
-			END 
-			
-		END 
-		PATCH_IF (second = (casts2 + 1)) BEGIN 
-			++casts2 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 11 level clabcols  ~AP_QDDCST2~ 
-			END 
-		END 
-		PATCH_IF (third = (casts3 + 1)) BEGIN 
-			++casts3 
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 12 level clabcols  ~AP_QDDCST3~ 
-			END 
-			
-		END 
-		PATCH_IF (fourth = (casts4 + 1)) BEGIN 
-			++casts4
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 13 level clabcols  ~AP_QDDCST4~ 
-			END 
-		END 
-		PATCH_IF (fifth = (casts5 + 1)) BEGIN 
-			++casts5
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 14 level clabcols  ~AP_QDDCST5~ 
-			END 
-			
-		END 
-		PATCH_IF (sixth = (casts6 + 1)) BEGIN 
-			++casts6
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 15 level clabcols  ~AP_QDDCST6~ 
-			END 
-		END 
-		PATCH_IF (seventh = (casts7 + 1)) BEGIN 
-			++casts7
-			INNER_ACTION BEGIN
-				COPY_EXISTING ~override/QDORAC.2da~ ~override~
-					COUNT_2DA_COLS clabcols
-					SET_2DA_ENTRY 16 level clabcols  ~AP_QDDCST7~ 
-			END 
-			
-		END 
-		
-	END 
-
-	
-COPY_EXISTING ~QDORAC.2da~ ~override~ //improve readability
-	PRETTY_PRINT_2DA
-	
-APPEND_COL ~MXSPLPRS.2da~ ~$ $ 8 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1~
-*/
