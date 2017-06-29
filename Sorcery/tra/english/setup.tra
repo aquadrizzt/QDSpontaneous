@@ -1,5 +1,25 @@
 @0 = ~Sorcery~ 
 
-@1 = ~sorcerer~
-@2 = ~Sorcerer~ 
-@3 = ~SORCERER: ... ~ 
+@1 = ~Remaining Level %lvl% Mage Spells: %slots%~ 
+@2 = ~Remaining Level %lvl% Priest Spells: %slots%~ 
+
+@10 = ~Sorcerer as a Mage~ 
+@11 = ~sorcerer~
+@12 = ~Sorcerer~ 
+@13 = ~SORCERER: Sorcerers are practitioners of magic who were born with the innate ability to cast spells. It is thought that the blood of some powerful creature flows through their veins; perhaps they are the spawn of the gods themselves, or even dragons walking in humanoid form. Regardless, the Sorcerer's magic is intuitive rather than logical. They know fewer spells than Mages, and acquire spells more slowly, but they can cast spells more often and have no need to select and prepare spells ahead of time. Sorcerers cannot specialize in magic the way Mages do. Other than these differences, a Sorcerer is very similar to a Mage.
+
+CLASS FEATURES:
+
+– May not wear any armor.
+– May only use the following weapons: dagger, quarterstaff, dart, sling.
+– May only become Proficient (one slot) in any weapon class.
+– May not place any slots in any fighting style.
+– May cast arcane spells.
+– May not scribe spells into their spellbooks as Mages do. Instead, Sorcerers learn a small number of spells at each level, which they can cast daily without memorization.
+– Hit Die: d4~ 
+
+@20 = ~Oracle as a Cleric~ 
+
+@21 = ~oracle~
+@22 = ~Oracle~
+@23 = ~ORACLE: ...~ 
