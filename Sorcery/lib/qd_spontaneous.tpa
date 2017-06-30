@@ -347,7 +347,7 @@ BEGIN
 			OUTER_FOR (slots = 0; slots < 10; ++slots) BEGIN	
 				OUTER_TEXT_SPRINT spl ~qddstr%lvl%%slots%~
 				COPY ~%lib_dir%/QDBLANK.spl~ ~override/%spl%.spl~
-					LPF ADD_SPELL_EFFECT INT_VAR opcode = 139 target = 1 timing = 1 parameter1 = RESOLVE_STR_REF(@10000001)  END	
+					LPF ADD_SPELL_EFFECT INT_VAR opcode = 139 target = 1 timing = 1 parameter1 = RESOLVE_STR_REF(@10000002)  END	
 			END 
 		END 
 		
